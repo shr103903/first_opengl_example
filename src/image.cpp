@@ -23,3 +23,32 @@ bool Image::LoadWithStb(const std::string& filepath) {
     }
     return true;
 }
+
+ImageUPtr Image::Create(int width, int height, int channelCount) {
+    auto image = ImageUPtr(new Image());
+    if (!image->Allocate(width, height, channelCount))
+        return nullptr;
+    return std::move(image);
+}
+
+bool Image::Allocate(int width, int height, int channelCount) {
+    m_width = width;
+    m_height = height;
+    m_channelCount = channelCount;
+    m_data = (uint8_t*)malloc(m_width * m_height * m_channelCount);
+    return m_data ? true : false;
+}
+
+void Image::SetCheckImage(int gridX, int gridY) {
+    for (int j = 0; j < m_height; j++) {
+        for (int i = 0; i < m_width; i++) {
+            int pos = (j * m_width + i) * m_channelCount;
+            bool even = ((i / gridX) + (j / gridY)) % 2 == 0;
+            uint8_t value = even ? 255 : 0;
+            for (int k = 0; k < m_channelCount; k++)
+                m_data[pos + k] = value;
+            if (m_channelCount > 3)
+                m_data[3] = 255;
+        }
+    }
+}

@@ -98,6 +98,10 @@ void Startup() {
         SPDLOG_ERROR("failed to load image");
         return; // Correct usage of return in a void function
     }
+
+    // auto image = Image::Create(512, 512);
+    // image->SetCheckImage(16, 16);
+    
     SPDLOG_INFO("image: {}x{}, {} channels", image->GetWidth(), image->GetHeight(), image->GetChannelCount());
 
     // 텍스처 생성
@@ -145,6 +149,12 @@ void Startup() {
     // 텍스처 좌표를 위해 6개의 float를 건너뛰고 2개의 float를 읽는다
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 8, (void*)(sizeof(float) * 6));
+
+    // for mipmap
+    glGenerateMipmap(GL_TEXTURE_2D);
+    // filtering
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR); // linear
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 }
 
 void Shutdown() {
