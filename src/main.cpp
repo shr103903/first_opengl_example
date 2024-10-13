@@ -1,5 +1,6 @@
 #include "common.h"
 #include "shader.h"
+#include "image.h"
 
 uint32_t CompileShaders();
 void Render();
@@ -12,6 +13,7 @@ uint32_t renderingProgram;
 uint32_t m_vertexBuffer;
 uint32_t m_vertexArrayObject;
 uint32_t m_indexBuffer;
+uint32_t m_texture;
 
 void OnFramebufferSizeChange(GLFWwindow* window, int width, int height) {
     SPDLOG_INFO("framebuffer size changed: ({} x {})", width, height);
@@ -41,8 +43,8 @@ uint32_t CompileShaders() {
     }
 
     // 쉐이더 생성
-    auto vertexShader = Shader::CreateFromFile("./shader/per_vertex_color.vs", GL_VERTEX_SHADER);
-    auto fragmentShader = Shader::CreateFromFile("./shader/per_vertex_color.fs", GL_FRAGMENT_SHADER);
+    auto vertexShader = Shader::CreateFromFile("./shader/texture.vs", GL_VERTEX_SHADER);
+    auto fragmentShader = Shader::CreateFromFile("./shader/texture.fs", GL_FRAGMENT_SHADER);
     SPDLOG_INFO("vertex shader id: {}", vertexShader->Get());
     SPDLOG_INFO("fragment shader id: {}", fragmentShader->Get());
     
@@ -89,50 +91,38 @@ void Startup() {
         return;
     }
     glUseProgram(renderingProgram);
+
+    // 이미지 로드
+    auto image = Image::Load("./image/wall.jpg");
+    if (!image) {
+        SPDLOG_ERROR("failed to load image");
+        return; // Correct usage of return in a void function
+    }
+    SPDLOG_INFO("image: {}x{}, {} channels", image->GetWidth(), image->GetHeight(), image->GetChannelCount());
+
+    // 텍스처 생성
+    glGenTextures(1, &m_texture); // texture id 생성
+    glBindTexture(GL_TEXTURE_2D, m_texture); // texture id 바인딩
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // linear filter
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB,
+        image->GetWidth(), image->GetHeight(), 0,
+        GL_RGB, GL_UNSIGNED_BYTE, image->GetData());
     
-    // 점 3개 삼각형
-    // float vertices[] = {
-    //     -0.5f, -0.5f, 0.0f,
-    //     0.5f, -0.5f, 0.0f,
-    //     0.0f, 0.5f, 0.0f,
-    // };
-
-    // 점 6개 삼각형 2개 => 사각형
-    // float vertices[] = {
-    //     // first triangle
-    //     0.5f, 0.5f, 0.0f, // top right
-    //     0.5f, -0.5f, 0.0f, // bottom right
-    //     -0.5f, 0.5f, 0.0f, // top left
-    //     // second triangle
-    //     0.5f, -0.5f, 0.0f, // bottom right
-    //     -0.5f, -0.5f, 0.0f, // bottom left
-    //     -0.5f, 0.5f, 0.0f // top left
-    // };
-
-    // 점 4개 사각형
-    // float vertices[] = {
-    //     0.5f, 0.5f, 0.0f, // top right
-    //     0.5f, -0.5f, 0.0f, // bottom right
-    //     -0.5f, -0.5f, 0.0f, // bottom left
-    //     -0.5f, 0.5f, 0.0f, // top left
-    // };
+    // 정점 데이터
     float vertices[] = { 
-        0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f, // top right, red
-        0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, // bottom right, green
-        -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f, // bottom left, blue
-        -0.5f, 0.5f, 0.0f, 1.0f, 1.0f, 0.0f, // top left, yellow
+        0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, // top right, red
+        0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, // bottom right, green
+        -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, // bottom left, blue
+        -0.5f, 0.5f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, // top left, yellow
     };
 
     uint32_t indices[] = { // note that we start from 0!
         0, 1, 3, // first triangle
         1, 2, 3, // second triange
     };
-
-    // uint32_t vao = 0;
-    // glGenVertexArrays(1, &vao);
-    // glBindVertexArray(vao);
-
-    // glPointSize(30.0f);
 
     glGenVertexArrays(1, &m_vertexArrayObject);
     glBindVertexArray(m_vertexArrayObject);
@@ -146,10 +136,15 @@ void Startup() {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
     
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 6, 0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 8, 0);
 
+    // 꼭지점 색상 지정을 위해 3개의 float를 건너뛰고 3개의 float를 읽는다
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 6, (void*)(sizeof(float) * 3));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 8, (void*)(sizeof(float) * 3));
+
+    // 텍스처 좌표를 위해 6개의 float를 건너뛰고 2개의 float를 읽는다
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 8, (void*)(sizeof(float) * 6));
 }
 
 void Shutdown() {
