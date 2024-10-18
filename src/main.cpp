@@ -14,6 +14,7 @@ uint32_t m_vertexBuffer;
 uint32_t m_vertexArrayObject;
 uint32_t m_indexBuffer;
 uint32_t m_texture;
+uint32_t m_texture2;
 
 void OnFramebufferSizeChange(GLFWwindow* window, int width, int height) {
     SPDLOG_INFO("framebuffer size changed: ({} x {})", width, height);
@@ -99,6 +100,14 @@ void Startup() {
         return; // Correct usage of return in a void function
     }
 
+    auto image2 = Image::Load("./image/awesomeface.png");
+    if (!image2) {
+        SPDLOG_ERROR("failed to load awesomeface image");
+        return; // Correct usage of return in a void function
+    }
+    SPDLOG_INFO("awesomeface image: {}x{}, {} channels",
+    image->GetWidth(), image->GetHeight(), image->GetChannelCount());
+
     // auto image = Image::Create(512, 512);
     // image->SetCheckImage(16, 16);
     
@@ -114,6 +123,24 @@ void Startup() {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB,
         image->GetWidth(), image->GetHeight(), 0,
         GL_RGB, GL_UNSIGNED_BYTE, image->GetData());
+
+    // texture 2
+    glGenTextures(1, &m_texture2);
+    glBindTexture(GL_TEXTURE_2D, m_texture2);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB,
+        image2->GetWidth(), image2->GetHeight(), 0,
+        GL_RGBA, GL_UNSIGNED_BYTE, image2->GetData()); // RGBA for PNG
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_texture);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_texture2);
+    glUniform1i(glGetUniformLocation(renderingProgram, "tex"), 0);
+    glUniform1i(glGetUniformLocation(renderingProgram, "tex2"), 1);
     
     // 정점 데이터
     float vertices[] = { 
