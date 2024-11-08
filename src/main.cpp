@@ -5,6 +5,8 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+using namespace std;
+
 
 uint32_t CompileShaders();
 void Render();
@@ -18,6 +20,7 @@ void MouseMove(double x, double y);
 void MouseButton(int button, int action, double x, double y);
 
 uint32_t renderingProgram;
+uint32_t simpleProgram; // for simple rendering
 uint32_t m_vertexBuffer;
 uint32_t m_vertexArrayObject;
 uint32_t m_indexBuffer;
@@ -35,6 +38,19 @@ glm::vec2 m_prevMousePos { glm::vec2(0.0f) };
 
 // clear color
 glm::vec4 m_clearColor { glm::vec4(0.1f, 0.2f, 0.3f, 0.0f) };
+
+// light parameter
+glm::vec3 materialSpecular(1.0f, 1.0f, 1.0f);
+glm::vec3 materialAmbient(1.0f, 1.0f, 1.0f);
+glm::vec3 materialEmit(0.0f, 0.0f, 0.0f);
+
+glm::vec3 lightDiffuse(1.0f, 1.0f, 1.0f);
+glm::vec3 lightSpecular(1.0f, 1.0f, 1.0f);
+glm::vec3 lightAmbient(0.2f, 0.2f, 0.2f);
+
+bool m_animation = true;
+glm::vec3 m_lightPos(3.0f, 3.0f, 1.0f);
+float m_materialShininess = 32.0f;
 
 
 void OnFramebufferSizeChange(GLFWwindow* window, int width, int height) {
@@ -57,7 +73,8 @@ void OnKeyEvent(GLFWwindow* window,
     }
 }
 
-uint32_t CompileShaders() {
+uint32_t CompileShaders(string vertexShaderSource, string fragmentShaderSource) {
+// uint32_t CompileShaders() {
     uint32_t program = glCreateProgram();
     if (program == 0){
         SPDLOG_ERROR("failed to create program");
@@ -65,8 +82,10 @@ uint32_t CompileShaders() {
     }
 
     // 쉐이더 생성
-    auto vertexShader = Shader::CreateFromFile("./shader/texture.vs", GL_VERTEX_SHADER);
-    auto fragmentShader = Shader::CreateFromFile("./shader/texture.fs", GL_FRAGMENT_SHADER);
+    // auto vertexShader = Shader::CreateFromFile("./shader/texture.vs", GL_VERTEX_SHADER);
+    // auto fragmentShader = Shader::CreateFromFile("./shader/texture.fs", GL_FRAGMENT_SHADER);
+    auto vertexShader = Shader::CreateFromFile(vertexShaderSource, GL_VERTEX_SHADER);
+    auto fragmentShader = Shader::CreateFromFile(fragmentShaderSource, GL_FRAGMENT_SHADER);
     SPDLOG_INFO("vertex shader id: {}", vertexShader->Get());
     SPDLOG_INFO("fragment shader id: {}", fragmentShader->Get());
     
@@ -91,6 +110,13 @@ uint32_t CompileShaders() {
 
 void Render() {
     if (ImGui::Begin("ui window")) {
+        if (ImGui::CollapsingHeader("light", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::DragFloat3("light pos", glm::value_ptr(m_lightPos), 0.01f);
+            ImGui::SliderFloat("materialShininess", &m_materialShininess, 0.0f, 256.0f);
+        }
+
+        ImGui::Checkbox("animation", &m_animation);
+
         if (ImGui::ColorEdit4("clear color", glm::value_ptr(m_clearColor))) {
             glClearColor(m_clearColor.r, m_clearColor.g, m_clearColor.b, m_clearColor.a);
         }
@@ -112,8 +138,9 @@ void Render() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     // transform
+    auto angle = glm::radians((float)glfwGetTime() * 120.0f);
     auto model = glm::rotate(glm::mat4(1.0f),
-      glm::radians((float)glfwGetTime() * 120.0f),
+      m_animation ? angle : glm::radians(20.0f),
       glm::vec3(1.0f, 0.5f, 0.0f));
 
     auto cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
@@ -130,9 +157,54 @@ void Render() {
     (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.01f, 20.0f);
     auto view = glm::lookAt(cameraPos, cameraTarget + m_cameraFront, cameraUp);
 
+    auto worldMatLoc = glGetUniformLocation(renderingProgram, "worldMat");  
+    glUniformMatrix4fv(worldMatLoc, 1, GL_FALSE, glm::value_ptr(model));
+    // auto viewMatLoc = glGetUniformLocation(renderingProgram, "viewMat");  
+    // glUniformMatrix4fv(viewMatLoc, 1, GL_FALSE, glm::value_ptr(view));
+    // auto projectionMatLoc = glGetUniformLocation(renderingProgram, "projMat");
+    // glUniformMatrix4fv(projectionMatLoc, 1, GL_FALSE, glm::value_ptr(projection));
+    auto eyePosLoc = glGetUniformLocation(renderingProgram, "eyePos");
+    glUniform3fv(eyePosLoc, 1, glm::value_ptr(m_cameraPos));
+
+
+    auto matSpecularLoc = glGetUniformLocation(renderingProgram, "matSpecular");
+    glUniform3fv(matSpecularLoc, 1, glm::value_ptr(materialSpecular));
+    auto matAmbientLoc = glGetUniformLocation(renderingProgram, "matAmbient");
+    glUniform3fv(matAmbientLoc, 1, glm::value_ptr(materialAmbient));
+    auto matEmitLoc = glGetUniformLocation(renderingProgram, "matEmit");
+    glUniform3fv(matEmitLoc, 1, glm::value_ptr(materialEmit));
+    auto matShininessLoc = glGetUniformLocation(renderingProgram, "matShininess");
+    glUniform1f(matShininessLoc, m_materialShininess);
+    
+    auto srcDiffuseLoc = glGetUniformLocation(renderingProgram, "srcDiffuse");
+    glUniform3fv(srcDiffuseLoc, 1, glm::value_ptr(lightDiffuse));
+    auto srcSpecularLoc = glGetUniformLocation(renderingProgram, "srcSpecular");
+    glUniform3fv(srcSpecularLoc, 1, glm::value_ptr(lightSpecular));
+    auto srcAmbientLoc = glGetUniformLocation(renderingProgram, "srcAmbient");
+    glUniform3fv(srcAmbientLoc, 1, glm::value_ptr(lightAmbient));
+
+    // Direction of the light
+    //glm::vec3 lightDirection(0.5f, 0.5f, 0.5f);
+    glm::vec3 lightDirection = - m_cameraFront;
+
+
     auto transform = projection * view * model;
     auto transformLoc = glGetUniformLocation(renderingProgram, "transform");
     glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(transform));
+    
+    // // light source 그리기
+    // auto lightPosLoc = glGetUniformLocation(renderingProgram, "lightPos");
+    // glUniform3fv(lightPosLoc, 1, glm::value_ptr(m_lightPos));
+    
+    // auto lightModel = glm::translate(glm::mat4(1.0f), m_lightPos) * glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
+    // auto lightTransform = projection * view * lightModel;
+    // glUniformMatrix4fv(lightPosLoc, 1, GL_FALSE, glm::value_ptr(lightTransform));
+    // auto lightModelMatLoc = glGetUniformLocation(renderingProgram, "worldMat");
+    // glUniformMatrix4fv(worldMatLoc, 1, GL_FALSE, glm::value_ptr(lightModel));
+    // lightAmbient = glm::vec3(1.0f, 1.0f, 1.0f); 
+    // glUniform3fv(srcAmbientLoc, 1, glm::value_ptr(lightAmbient));
+
+
     glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
 
 
@@ -158,7 +230,7 @@ void Render() {
 // }
 
 void Startup() {
-    renderingProgram = CompileShaders();
+    renderingProgram = CompileShaders("./shader/texture.vs", "./shader/texture.fs");
     if (renderingProgram == 0) {
         SPDLOG_ERROR("failed to compile shaders");
         return;
@@ -208,47 +280,40 @@ void Startup() {
     glBindTexture(GL_TEXTURE_2D, m_texture);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_texture2);
-    glUniform1i(glGetUniformLocation(renderingProgram, "tex"), 0);
-    glUniform1i(glGetUniformLocation(renderingProgram, "tex2"), 1);
+    glUniform1i(glGetUniformLocation(renderingProgram, "diffuse_tex"), 0);
+    glUniform1i(glGetUniformLocation(renderingProgram, "specular_tex"), 1);
     
     // 정점 데이터
-    // float vertices[] = { 
-    //     0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, // top right, red
-    //     0.5f, -0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, // bottom right, green
-    //     -0.5f, -0.5f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, // bottom left, blue
-    //     -0.5f, 0.5f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, // top left, yellow
-    // };
+    float vertices[] = { // pos.xyz, normal.xyz, texcoord.uv
+        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f,
+        0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f, 1.0f, 0.0f,
+        0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f, 0.0f, 1.0f,
 
-    float vertices[] = {
-        -0.5f, -0.5f, -0.5f, 0.0f, 0.0f,
-        0.5f, -0.5f, -0.5f, 1.0f, 0.0f,
-        0.5f,  0.5f, -0.5f, 1.0f, 1.0f,
-        -0.5f,  0.5f, -0.5f, 0.0f, 1.0f,
+        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f,
+        0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f, 1.0f, 0.0f,
+        0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f,
+        -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f, 0.0f, 1.0f,
 
-        -0.5f, -0.5f,  0.5f, 0.0f, 0.0f,
-        0.5f, -0.5f,  0.5f, 1.0f, 0.0f,
-        0.5f,  0.5f,  0.5f, 1.0f, 1.0f,
-        -0.5f,  0.5f,  0.5f, 0.0f, 1.0f,
+        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f,
+        -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f, 1.0f, 1.0f,
+        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f,
+        -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f, 0.0f, 0.0f,
 
-        -0.5f,  0.5f,  0.5f, 1.0f, 0.0f,
-        -0.5f,  0.5f, -0.5f, 1.0f, 1.0f,
-        -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-        -0.5f, -0.5f,  0.5f, 0.0f, 0.0f,
+        0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f,
+        0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f, 1.0f, 1.0f,
+        0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f,
+        0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f, 0.0f, 0.0f,
 
-        0.5f,  0.5f,  0.5f, 1.0f, 0.0f,
-        0.5f,  0.5f, -0.5f, 1.0f, 1.0f,
-        0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-        0.5f, -0.5f,  0.5f, 0.0f, 0.0f,
+        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f,
+        0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f, 1.0f, 1.0f,
+        0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f,
+        -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f, 0.0f, 0.0f,
 
-        -0.5f, -0.5f, -0.5f, 0.0f, 1.0f,
-        0.5f, -0.5f, -0.5f, 1.0f, 1.0f,
-        0.5f, -0.5f,  0.5f, 1.0f, 0.0f,
-        -0.5f, -0.5f,  0.5f, 0.0f, 0.0f,
-
-        -0.5f,  0.5f, -0.5f, 0.0f, 1.0f,
-        0.5f,  0.5f, -0.5f, 1.0f, 1.0f,
-        0.5f,  0.5f,  0.5f, 1.0f, 0.0f,
-        -0.5f,  0.5f,  0.5f, 0.0f, 0.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f,
+        0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f, 1.0f, 1.0f,
+        0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f,
+        -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f, 0.0f, 0.0f,
     };
 
     // uint32_t indices[] = { // note that we start from 0!
@@ -276,18 +341,16 @@ void Startup() {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
     
+    // 꼭지점 위치를 위해 3개의 float를 읽는다.
     glEnableVertexAttribArray(0);
-    // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 8, 0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 5, 0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 8, 0);
+    // 
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 8, (void*)(sizeof(float) * 3));
 
-    // // 꼭지점 색상 지정을 위해 3개의 float를 건너뛰고 3개의 float를 읽는다
-    // glEnableVertexAttribArray(1);
-    // glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 8, (void*)(sizeof(float) * 3));
-
-    // 텍스처 좌표를 위해 6개의 float를 건너뛰고 2개의 float를 읽는다
+    // 텍셀
     glEnableVertexAttribArray(2);
-    //glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 8, (void*)(sizeof(float) * 6));
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 5, (void*)(sizeof(float) * 3));
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 8, (void*)(sizeof(float) * 6));
 
     // for mipmap
     glGenerateMipmap(GL_TEXTURE_2D);
