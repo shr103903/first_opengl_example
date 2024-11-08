@@ -90,7 +90,7 @@ uint32_t CompileShaders() {
 }
 
 void Render() {
-	if (ImGui::Begin("ui window")) {
+    if (ImGui::Begin("ui window")) {
         if (ImGui::ColorEdit4("clear color", glm::value_ptr(m_clearColor))) {
             glClearColor(m_clearColor.r, m_clearColor.g, m_clearColor.b, m_clearColor.a);
         }
@@ -107,7 +107,7 @@ void Render() {
     }
     ImGui::End();
 
-    glClearColor(0.1f, 0.2f, 0.3f, 0.0f);
+    //glClearColor(0.1f, 0.2f, 0.3f, 0.0f);
     //glClear(GL_COLOR_BUFFER_BIT);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
