@@ -1,50 +1,63 @@
 #include "common.h"
-#include "shader.h"
-#include "image.h"
+#include "shader_m.h"
+//#include "image.h"
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include "camera.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb/stb_image.h>
 
 using namespace std;
 
 
-uint32_t CompileShaders();
 void Render();
-// void RenderTriangle();
-// void RenderRectangle();
-// void RenderCube();
-void Startup();
+void Init();
 void Shutdown();
+unsigned int loadTexture(const std::string& filepath);
 void ProcessInput(GLFWwindow* window);
 void MouseMove(double x, double y);
 void MouseButton(int button, int action, double x, double y);
 
-uint32_t renderingProgram;
-uint32_t simpleProgram; // for simple rendering
-uint32_t m_vertexBuffer;
-uint32_t m_vertexArrayObject;
-uint32_t m_indexBuffer;
-uint32_t m_texture;
-uint32_t m_texture2;
-ImageUPtr m_image1, m_image2;
-
-//camera parameter
-glm::vec3 m_cameraPos { glm::vec3(0.0f, 0.0f, 3.0f) };
-glm::vec3 m_cameraFront { glm::vec3(0.0f, 0.0f, -1.0f) };
-glm::vec3 m_cameraUp { glm::vec3(0.0f, 1.0f, 0.0f) };
-float m_cameraPitch = 0.0f;
-float m_cameraYaw = 0.0f;
-bool m_cameraControl { false };  
-glm::vec2 m_prevMousePos { glm::vec2(0.0f) };
-
 // clear color
 glm::vec4 m_clearColor { glm::vec4(0.1f, 0.2f, 0.3f, 0.0f) };
 
+//// settings - by using learnopengl.com
+const unsigned int SCR_WIDTH = WINDOW_WIDTH;
+const unsigned int SCR_HEIGHT = WINDOW_HEIGHT;
+
+////  camera 
+Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+float lastX = SCR_WIDTH / 2.0f;
+float lastY = SCR_HEIGHT / 2.0f;
+bool firstMouse = true;
+
+//// timing
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
+
+bool m_cameraControl { false };  
+glm::vec2 m_prevMousePos { glm::vec2(0.0f) };
+
+// build and compile our shader zprogram
+// ------------------------------------
+
+Shader lightingShader; // 물체를 그리는 쉐이더프로그램 
+Shader lightCubeShader; // 광원을 그리는 쉐이더프로그램
+
+unsigned int diffuseMap;
+unsigned int specularMap;
+unsigned int emissionMap;
+
+unsigned int VBO, cubeVAO;
+unsigned int lightCubeVAO;
+
 bool m_animation = true;
 glm::vec3 m_lightPos(0.2f, 0.2f, 1.0f);
-float m_materialShininess = 32.0f;
+float m_materialShininess = 64.0f;
+glm::vec3 lightPos(0.7f, 0.0f, 1.5f);
 
-glm::vec3 m_modelRotation(20.f, 20.f, 0.f);
+glm::vec3 m_modelRotation(0.f, 0.f, 0.f);
 
 
 void OnFramebufferSizeChange(GLFWwindow* window, int width, int height) {
@@ -67,40 +80,6 @@ void OnKeyEvent(GLFWwindow* window,
     }
 }
 
-uint32_t CompileShaders(string vertexShaderSource, string fragmentShaderSource) {
-    uint32_t program = glCreateProgram();
-    if (program == 0){
-        SPDLOG_ERROR("failed to create program");
-        return 0;
-    }
-
-    // 쉐이더 생성
-    // auto vertexShader = Shader::CreateFromFile("./shader/texture.vs", GL_VERTEX_SHADER);
-    // auto fragmentShader = Shader::CreateFromFile("./shader/texture.fs", GL_FRAGMENT_SHADER);
-    auto vertexShader = Shader::CreateFromFile(vertexShaderSource, GL_VERTEX_SHADER);
-    auto fragmentShader = Shader::CreateFromFile(fragmentShaderSource, GL_FRAGMENT_SHADER);
-    SPDLOG_INFO("vertex shader id: {}", vertexShader->Get());
-    SPDLOG_INFO("fragment shader id: {}", fragmentShader->Get());
-    
-    // 쉐이더를 프로그램에 연결
-    glAttachShader(program, vertexShader->Get());
-    glAttachShader(program, fragmentShader->Get());
-    glLinkProgram(program);
-
-    // 프로그램 링크 확인
-    int success = 0;
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if (!success) {
-        char infoLog[1024];
-        glGetProgramInfoLog(program, 1024, nullptr, infoLog);
-        SPDLOG_ERROR("failed to link program");
-        SPDLOG_ERROR("reason: {}", infoLog);
-        return 0;
-    }
-    SPDLOG_INFO("program id: {}", program);
-    return program;
-}
-
 void Render() {
     if (ImGui::Begin("ui window")) {
         if (ImGui::CollapsingHeader("model", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -118,317 +97,237 @@ void Render() {
             glClearColor(m_clearColor.r, m_clearColor.g, m_clearColor.b, m_clearColor.a);
         }
         ImGui::Separator();
-        ImGui::DragFloat3("camera pos", glm::value_ptr(m_cameraPos), 0.01f);
-        ImGui::DragFloat("camera yaw", &m_cameraYaw, 0.5f);
-        ImGui::DragFloat("camera pitch", &m_cameraPitch, 0.5f, -89.0f, 89.0f);
+        ImGui::DragFloat3("camera pos", glm::value_ptr(camera.Position), 0.01f);
+        if(ImGui::DragFloat("camera yaw", &(camera.Yaw), 0.5f)) {
+            camera.updateCameraVectors();
+        }
+        if(ImGui::DragFloat("camera pitch", &(camera.Pitch), 0.5f, -89.0f, 89.0f)) {
+            camera.updateCameraVectors();
+        }
         ImGui::Separator();
         if (ImGui::Button("reset camera")) {
-            m_cameraYaw = 0.0f;
-            m_cameraPitch = 0.0f;
-            m_cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
+            camera.Yaw = -90.0f;
+            camera.Pitch = 0.0f;
+            camera.Position = glm::vec3(0.0f, 0.0f, 3.0f);
+            camera.updateCameraVectors();
         }
     }
     ImGui::End();
-
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glUseProgram(renderingProgram);
+     // be sure to activate shader when setting uniforms/drawing objects
+    lightingShader.use();
+    lightingShader.setVec3("light.position", lightPos);
+    lightingShader.setVec3("viewPos", camera.Position);
 
-    // transform
-    auto angle = glm::radians((float)glfwGetTime() * 120.0f);
-    glm::mat4 model(1.0f);
-    if(m_animation) { 
-        model = glm::rotate(glm::mat4(1.0f),  angle, glm::vec3(1.0f, 0.5f, 0.0f));
-    } else {
-        model = glm::rotate(glm::mat4(1.0f), glm::radians(m_modelRotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
-                glm::rotate(glm::mat4(1.0f), glm::radians(m_modelRotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
-                glm::rotate(glm::mat4(1.0f), glm::radians(m_modelRotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
-    }
+    // light properties
+    lightingShader.setVec3("light.ambient", 0.2f, 0.2f, 0.2f);
+    lightingShader.setVec3("light.diffuse", 0.5f, 0.5f, 0.5f);
+    lightingShader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
 
-    auto cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
-    auto cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
-    auto cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+    // material properties
+    lightingShader.setFloat("material.shininess", m_materialShininess);
 
-    m_cameraFront =  glm::rotate(glm::mat4(1.0f),   
-        glm::radians(m_cameraYaw), glm::vec3(0.0f, 1.0f, 0.0f)) * 
-        glm::rotate(glm::mat4(1.0f), glm::radians(m_cameraPitch), 
-        glm::vec3(1.0f, 0.0f, 0.0f)) * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f);
+    // view/projection transformations
+    glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+    glm::mat4 view = camera.GetViewMatrix();
+    lightingShader.setMat4("projection", projection);
+    lightingShader.setMat4("view", view);
 
-    // 종횡비 4:3, 세로화각 45도의 원근 투영
-    auto projection = glm::perspective(glm::radians(45.0f),
-    (float)WINDOW_WIDTH / (float)WINDOW_HEIGHT, 0.01f, 20.0f);
-    auto view = glm::lookAt(cameraPos, cameraTarget + m_cameraFront, cameraUp);
+    // world transformation
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::rotate(model, glm::radians(m_modelRotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::rotate(model, glm::radians(m_modelRotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+    model = glm::rotate(model, glm::radians(m_modelRotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+    lightingShader.setMat4("model", model);
 
-    auto worldMatLoc = glGetUniformLocation(renderingProgram, "worldMat");  
-    glUniformMatrix4fv(worldMatLoc, 1, GL_FALSE, glm::value_ptr(model));
+    // bind diffuse map
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, diffuseMap);
+    // bind specular map
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, specularMap);
+    // bind emission map
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, emissionMap);
 
-    auto transform = projection * view * model;
-    auto transformLoc = glGetUniformLocation(renderingProgram, "transform");
-    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(transform));
+    // render the cube
+    glBindVertexArray(cubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    // auto viewMatLoc = glGetUniformLocation(renderingProgram, "viewMat");  
-    // glUniformMatrix4fv(viewMatLoc, 1, GL_FALSE, glm::value_ptr(view));
-    // auto projectionMatLoc = glGetUniformLocation(renderingProgram, "projMat");
-    // glUniformMatrix4fv(projectionMatLoc, 1, GL_FALSE, glm::value_ptr(projection));
-    auto eyePosLoc = glGetUniformLocation(renderingProgram, "eyePos");
-    glUniform3fv(eyePosLoc, 1, glm::value_ptr(m_cameraPos));
 
-    // light parameter
-    glm::vec3 materialSpecular(1.0f, 1.0f, 1.0f);
-    glm::vec3 materialAmbient(1.0f, 1.0f, 1.0f);
-    glm::vec3 materialEmit(0.0f, 0.0f, 0.0f);
-
-    glm::vec3 lightDiffuse(1.0f, 1.0f, 1.0f);
-    glm::vec3 lightSpecular(1.0f, 1.0f, 1.0f);
-    glm::vec3 lightAmbient(0.1f, 0.1f, 0.1f);
-
-    auto matSpecularLoc = glGetUniformLocation(renderingProgram, "matSpecular");
-    glUniform3fv(matSpecularLoc, 1, glm::value_ptr(materialSpecular));
-    auto matAmbientLoc = glGetUniformLocation(renderingProgram, "matAmbient");
-    glUniform3fv(matAmbientLoc, 1, glm::value_ptr(materialAmbient));
-    auto matEmitLoc = glGetUniformLocation(renderingProgram, "matEmit");
-    glUniform3fv(matEmitLoc, 1, glm::value_ptr(materialEmit));
-    auto matShininessLoc = glGetUniformLocation(renderingProgram, "matShininess");
-    glUniform1f(matShininessLoc, m_materialShininess);
+    // also draw the lamp object
+    lightCubeShader.use();
+    lightCubeShader.setMat4("projection", projection);
+    lightCubeShader.setMat4("view", view);
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, lightPos);
+    model = glm::scale(model, glm::vec3(0.2f)); // a smaller cube - translate it down so it's not in the center of the screen
     
-    auto srcDiffuseLoc = glGetUniformLocation(renderingProgram, "srcDiffuse");
-    glUniform3fv(srcDiffuseLoc, 1, glm::value_ptr(lightDiffuse));
-    auto srcSpecularLoc = glGetUniformLocation(renderingProgram, "srcSpecular");
-    glUniform3fv(srcSpecularLoc, 1, glm::value_ptr(lightSpecular));
-    auto srcAmbientLoc = glGetUniformLocation(renderingProgram, "srcAmbient");
-    glUniform3fv(srcAmbientLoc, 1, glm::value_ptr(lightAmbient));
 
-    // Direction of the light
-    glm::vec3 lightDirection(0.2f, 1.5f, 0.3f);
-    //glm::vec3 lightDirection = - m_cameraFront;
-    
-    // light source 그리기
-    GLint lightDirLoc = glGetUniformLocation(renderingProgram, "lightDir");
-    glUniform3fv(lightDirLoc, 1, glm::value_ptr(lightDirection));
-    
-    // Light position 전달
-    GLint lightPosLoc = glGetUniformLocation(renderingProgram, "lightPos");
-    glUniform3fv(lightPosLoc, 1, glm::value_ptr(m_lightPos));
-    
-    // light source 그리기
-    // auto lightModel = glm::translate(glm::mat4(1.0f), m_lightPos) *
-    //                   glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
-    // auto lightTransform = projection * view * lightModel;
-    // glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(lightTransform));
-    // auto lightModelMatLoc = glGetUniformLocation(renderingProgram, "worldMat");
-    // glUniformMatrix4fv(worldMatLoc, 1, GL_FALSE, glm::value_ptr(lightModel));
-    // lightAmbient = glm::vec3(1.0f, 1.0f, 1.0f); 
-    // glUniform3fv(srcAmbientLoc, 1, glm::value_ptr(lightAmbient));
+    lightCubeShader.setMat4("model", model);
 
-    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-
-    // simple program으로 light source 그리기
-    glUseProgram(simpleProgram);
-    auto lightModel = glm::translate(glm::mat4(1.0f), m_lightPos) *
-                      glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
-    auto lightTransform = projection * view * lightModel;
-    glUniformMatrix4fv(glGetUniformLocation(simpleProgram, "transform"), 1, GL_FALSE, glm::value_ptr(lightTransform));
-    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-
-    //glDrawArrays(GL_POINTS, 0, 1);
-    //RenderTriangle();
-    //RenderRectangle();
-    //RenderCube();
+    glBindVertexArray(lightCubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
 }
 
-// void RenderTriangle() {
-//     //glDrawArrays(GL_TRIANGLES, 0, 6);
-// }
-
-// void RenderRectangle() {
-//     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-// }
-
-// void RenderCube() {
-//     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);  
-//     glEnable(GL_DEPTH_TEST);
-
-//     glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
-// }
-
-void Startup() {
-    renderingProgram = CompileShaders("./shader/texture.vs", "./shader/texture.fs");
-    if (renderingProgram == 0) {
-        SPDLOG_ERROR("failed to compile shaders");
-        return;
-    }
-    glUseProgram(renderingProgram);
-
+void Init() {
+    // configure global opengl state
+    // -----------------------------
     glEnable(GL_DEPTH_TEST);  
 
-    // 이미지 로드
-    m_image1 = Image::Load("./image/container2.png");
-    if (!m_image1) {
-        SPDLOG_ERROR("failed to load image1");
-        return; // Correct usage of return in a void function
-    }
-
-    SPDLOG_INFO("image1: {}x{}, {} channels",
-    m_image1->GetWidth(), m_image1->GetHeight(), m_image1->GetChannelCount());
-
-    m_image2 = Image::Load("./image/container2_specular.png");
-    if (!m_image2) {
-        SPDLOG_ERROR("failed to load image2");
-        return; // Correct usage of return in a void function
-    }
-
-    SPDLOG_INFO("image2: {}x{}, {} channels",
-    m_image2->GetWidth(), m_image2->GetHeight(), m_image2->GetChannelCount());
-
-    // 텍스처 생성
-    glGenTextures(1, &m_texture);
-    glBindTexture(GL_TEXTURE_2D, m_texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB,
-        m_image1->GetWidth(), m_image1->GetHeight(), 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, m_image1->GetData());
-     glGenerateMipmap(GL_TEXTURE_2D); // 각 텍스처에 대해 mipmap 생성
-   
-    // texture 2
-    glGenTextures(1, &m_texture2);
-    glBindTexture(GL_TEXTURE_2D, m_texture2);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB,
-        m_image2->GetWidth(), m_image2->GetHeight(), 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, m_image2->GetData()); // RGBA for PNG
-       
-    // mipmaps
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_texture);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, m_texture2);
-    glUniform1i(glGetUniformLocation(renderingProgram, "diffuse_tex"), 0);
-    glUniform1i(glGetUniformLocation(renderingProgram, "specular_tex"), 1);
-
-    simpleProgram = CompileShaders("./shader/simple.vs", "./shader/simple.fs"); 
-    if (simpleProgram == 0) {
-        SPDLOG_ERROR("failed to compile simple shaders");
-        return;
-    }
+    lightingShader = Shader("./shader/lighting_maps.vs", "./shader/lighting_maps.fs");
+    lightCubeShader= Shader("./shader/lighting_cube.vs", "./shader/lighting_cube.fs");
     
     // 정점 데이터
-    float vertices[] = { // pos.xyz, normal.xyz, texcoord.uv
-        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f, 0.0f, 0.0f,
-        0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f, 1.0f, 0.0f,
-        0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f, 1.0f, 1.0f,
-        -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f, 0.0f, 1.0f,
+    // set up vertex data (and buffer(s)) and configure vertex attributes
+    // ------------------------------------------------------------------
+    float vertices[] = {
+        // positions          // normals           // texture coords
+        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f,  0.0f,
+         0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f,  0.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f,  1.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f,  1.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f,  1.0f,
+        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f,  0.0f,
 
-        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f, 0.0f, 0.0f,
-        0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f, 1.0f, 0.0f,
-        0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f, 1.0f, 1.0f,
-        -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f, 0.0f, 1.0f,
+        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f,  0.0f,
+         0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f,  0.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f,  1.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f,  1.0f,
+        -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f,  1.0f,
+        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f,  0.0f,
 
-        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f, 1.0f, 0.0f,
-        -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f, 1.0f, 1.0f,
-        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f, 0.0f, 1.0f,
-        -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f, 0.0f, 0.0f,
+        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f,  0.0f,
+        -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  1.0f,  1.0f,
+        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f,  1.0f,
+        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f,  1.0f,
+        -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  0.0f,  0.0f,
+        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f,  0.0f,
 
-        0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f, 1.0f, 0.0f,
-        0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f, 1.0f, 1.0f,
-        0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f, 0.0f, 1.0f,
-        0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f, 0.0f, 0.0f,
+         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  1.0f,  0.0f,
+         0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f,  1.0f,
+         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  0.0f,  1.0f,
+         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  0.0f,  1.0f,
+         0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f,  0.0f,
+         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  1.0f,  0.0f,
 
-        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f, 0.0f, 1.0f,
-        0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f, 1.0f, 1.0f,
-        0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f, 1.0f, 0.0f,
-        -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f, 0.0f, 0.0f,
+        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f,  1.0f,
+         0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  1.0f,  1.0f,
+         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f,  0.0f,
+         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f,  0.0f,
+        -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  0.0f,  0.0f,
+        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f,  1.0f,
 
-        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f, 0.0f, 1.0f,
-        0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f, 1.0f, 1.0f,
-        0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f, 1.0f, 0.0f,
-        -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f, 0.0f, 0.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f,  1.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  1.0f,  1.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f,  0.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f,  0.0f,
+        -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  0.0f,  0.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f,  1.0f
     };
 
-    // uint32_t indices[] = { // note that we start from 0!
-    //     0, 1, 3, // first triangle
-    //     1, 2, 3, // second triange
-    // };
+    // first, configure the cube's VAO (and VBO)
+    // unsigned int VBO, cubeVAO;
+    glGenVertexArrays(1, &cubeVAO);
+    glGenBuffers(1, &VBO);
 
-    uint32_t indices[] = {
-        0,  2,  1,  2,  0,  3,
-        4,  5,  6,  6,  7,  4,
-        8,  9, 10, 10, 11,  8,
-        12, 14, 13, 14, 12, 15,
-        16, 17, 18, 18, 19, 16,
-        20, 22, 21, 22, 20, 23,
-    };
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    glGenVertexArrays(1, &m_vertexArrayObject);
-    glBindVertexArray(m_vertexArrayObject);
-
-    glGenBuffers(1, &m_vertexBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, m_vertexBuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices,GL_STATIC_DRAW);
-
-    glGenBuffers(1, &m_indexBuffer);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indexBuffer);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-    
-    // 꼭지점 위치를 위해 3개의 float를 읽는다.
+    glBindVertexArray(cubeVAO);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 8, 0);
-    // 
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 8, (void*)(sizeof(float) * 3));
-
-    // 텍셀
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(float) * 8, (void*)(sizeof(float) * 6));
 
-    // for mipmap
-    glGenerateMipmap(GL_TEXTURE_2D);
-    // filtering
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR); // linear
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // second, configure the light's VAO (VBO stays the same; the vertices are the same for the light object which is also a 3D cube)
+    //unsigned int lightCubeVAO;
+    glGenVertexArrays(1, &lightCubeVAO);
+    glBindVertexArray(lightCubeVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    // note that we update the lamp's position attribute's stride to reflect the updated buffer data
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // load textures (we now use a utility function to keep the code more organized)
+    // -----------------------------------------------------------------------------
+    diffuseMap  = loadTexture("./image/container2.png");
+    specularMap = loadTexture("./image/container2_specular.png");
+    emissionMap = loadTexture("./image/container2.png");
+
+    // shader configuration
+    // --------------------
+    lightingShader.use();
+    lightingShader.setInt("material.diffuse", 0);
+    lightingShader.setInt("material.specular", 1);
+    lightingShader.setInt("material.emission", 2);
 }
 
 void Shutdown() {
-    if(renderingProgram != 0) {
-        glDeleteProgram(renderingProgram);
+    // optional: de-allocate all resources once they've outlived their purpose:
+    // ------------------------------------------------------------------------
+    glDeleteVertexArrays(1, &cubeVAO);
+    glDeleteVertexArrays(1, &lightCubeVAO);
+    glDeleteBuffers(1, &VBO);
+}
+
+// utility function for loading a 2D texture from file
+// ---------------------------------------------------
+//unsigned int loadTexture(char const * path)
+unsigned int loadTexture(const std::string& filepath)
+{
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+
+    int width, height, nrComponents;
+    char const * path = filepath.c_str();
+    unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
+    if (data)
+    {
+        GLenum format;
+        if (nrComponents == 1)
+            format = GL_RED;
+        else if (nrComponents == 3)
+            format = GL_RGB;
+        else if (nrComponents == 4)
+            format = GL_RGBA;
+
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        stbi_image_free(data);
+    }
+    else
+    {
+        std::cout << "Texture failed to load at path: " << path << std::endl;
+        stbi_image_free(data);
     }
 
-    if(m_vertexBuffer != 0) {
-        glDeleteBuffers(1, &m_vertexBuffer);
-    }
-    if(m_vertexArrayObject != 0) {
-        glDeleteVertexArrays(1, &m_vertexArrayObject);
-    }
+    return textureID;
 }
 
 void ProcessInput(GLFWwindow* window) {
     if (!m_cameraControl)
         return;
 
-    const float cameraSpeed = 0.0005f; // adjust accordingly
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        m_cameraPos += cameraSpeed * m_cameraFront;
+        camera.ProcessKeyboard(FORWARD, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        m_cameraPos -= cameraSpeed * m_cameraFront;
-
-    auto cameraRight = glm::normalize(glm::cross(m_cameraUp, -m_cameraFront));
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        m_cameraPos += cameraSpeed * cameraRight;
+        camera.ProcessKeyboard(BACKWARD, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        m_cameraPos -= cameraSpeed * cameraRight;    
-
-    auto cameraUp = glm::normalize(glm::cross(-m_cameraFront, cameraRight));
-    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
-        m_cameraPos += cameraSpeed * cameraUp;
-    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
-        m_cameraPos -= cameraSpeed * cameraUp;
+        camera.ProcessKeyboard(LEFT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        camera.ProcessKeyboard(RIGHT, deltaTime);
 }
 
 void MouseMove(double x, double y) {
@@ -437,21 +336,8 @@ void MouseMove(double x, double y) {
     auto pos = glm::vec2((float)x, (float)y);
     auto deltaPos = pos - m_prevMousePos;
 
-    // static glm::vec2 prevPos = glm::vec2((float)x, (float)y);
-    // auto pos = glm::vec2((float)x, (float)y);
-    // auto deltaPos = pos - prevPos;
+    camera.ProcessMouseMovement(deltaPos.x, deltaPos.y);
 
-    const float cameraRotSpeed = 0.8f;
-    m_cameraYaw -= deltaPos.x * cameraRotSpeed;
-    m_cameraPitch -= deltaPos.y * cameraRotSpeed;
-
-    if (m_cameraYaw < 0.0f)   m_cameraYaw += 360.0f;
-    if (m_cameraYaw > 360.0f) m_cameraYaw -= 360.0f;
-
-    if (m_cameraPitch > 89.0f)  m_cameraPitch = 89.0f;
-    if (m_cameraPitch < -89.0f) m_cameraPitch = -89.0f;
-
-    // prevPos = pos;    
     m_prevMousePos = pos;
 }
 
@@ -529,16 +415,26 @@ int main(int argc, const char** argv) {
     OnFramebufferSizeChange(window, WINDOW_WIDTH, WINDOW_HEIGHT);
     glfwSetFramebufferSizeCallback(window, OnFramebufferSizeChange);
     glfwSetKeyCallback(window, OnKeyEvent);
+    // glfwSetCharCallback(window, OnCharEvent);
     glfwSetCursorPosCallback(window, OnCursorPos);
     glfwSetMouseButtonCallback(window, OnMouseButton);
+    // glfwSetScrollCallback(window, OnScroll);
 
     // shader program 생성 및 사용
-    Startup();
+    Init();
 
     // glfw 루프 실행, 윈도우 close 버튼을 누르면 정상 종료
     SPDLOG_INFO("Start main loop");
     while (!glfwWindowShouldClose(window)) {
+        // per-frame time logic
+        // --------------------
+        float currentFrame = static_cast<float>(glfwGetTime());
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
+        ProcessInput(window);
         glfwPollEvents();
+
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
@@ -546,11 +442,14 @@ int main(int argc, const char** argv) {
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
         glfwSwapBuffers(window);
     }
 
+    Shutdown();
     ImGui_ImplOpenGL3_DestroyFontsTexture();
     ImGui_ImplOpenGL3_DestroyDeviceObjects();
+    ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext(imguiContext);
 
