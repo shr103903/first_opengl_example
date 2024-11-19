@@ -19,6 +19,7 @@ layout(location = 0) out vec4 fragColor;
 void main() {
     vec3 normal = normalize(v_normal);
     vec3 viewDir = normalize(v_view);
+    vec3 lightDir = normalize(lightPos - v_worldPos); // lightPos에 대한 방향벡터
     vec3 light = normalize(lightDir);
 
     // specular
@@ -26,11 +27,10 @@ void main() {
     vec3 reflectDir = reflect(-light, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), matShininess);
     vec3 matSpecularColor = texture(specular_tex, v_texCoord).rgb;
-    vec3 specular = spec * srcSpecular  * matSpecular;
+    vec3 specular = spec * srcSpecular * matSpecular;
 
     // diffuse
     float diff = max(dot(normal, light), 0.0); // 라이트 방향이 다르면 완전 0이 됨
-    //vec3 matDiffuse = mix(texture(diffuse_tex, v_texCoord), texture(specular_tex, v_texCoord), 0.5).rgb;
     vec3 matDiffuse = texture(diffuse_tex, v_texCoord).rgb;
     vec3 diffuse = diff * srcDiffuse *  matDiffuse;
 

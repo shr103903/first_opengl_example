@@ -26,6 +26,7 @@ uint32_t m_vertexArrayObject;
 uint32_t m_indexBuffer;
 uint32_t m_texture;
 uint32_t m_texture2;
+ImageUPtr m_image1, m_image2;
 
 //camera parameter
 glm::vec3 m_cameraPos { glm::vec3(0.0f, 0.0f, 3.0f) };
@@ -39,18 +40,11 @@ glm::vec2 m_prevMousePos { glm::vec2(0.0f) };
 // clear color
 glm::vec4 m_clearColor { glm::vec4(0.1f, 0.2f, 0.3f, 0.0f) };
 
-// light parameter
-glm::vec3 materialSpecular(1.0f, 1.0f, 1.0f);
-glm::vec3 materialAmbient(1.0f, 1.0f, 1.0f);
-glm::vec3 materialEmit(0.0f, 0.0f, 0.0f);
-
-glm::vec3 lightDiffuse(1.0f, 1.0f, 1.0f);
-glm::vec3 lightSpecular(1.0f, 1.0f, 1.0f);
-glm::vec3 lightAmbient(0.2f, 0.2f, 0.2f);
-
 bool m_animation = true;
-glm::vec3 m_lightPos(3.0f, 3.0f, 1.0f);
+glm::vec3 m_lightPos(0.2f, 0.2f, 1.0f);
 float m_materialShininess = 32.0f;
+
+glm::vec3 m_modelRotation(20.f, 20.f, 0.f);
 
 
 void OnFramebufferSizeChange(GLFWwindow* window, int width, int height) {
@@ -74,7 +68,6 @@ void OnKeyEvent(GLFWwindow* window,
 }
 
 uint32_t CompileShaders(string vertexShaderSource, string fragmentShaderSource) {
-// uint32_t CompileShaders() {
     uint32_t program = glCreateProgram();
     if (program == 0){
         SPDLOG_ERROR("failed to create program");
@@ -110,6 +103,10 @@ uint32_t CompileShaders(string vertexShaderSource, string fragmentShaderSource) 
 
 void Render() {
     if (ImGui::Begin("ui window")) {
+        if (ImGui::CollapsingHeader("model", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::DragFloat3("model rotation", glm::value_ptr(m_modelRotation), 0.01f);
+          
+        }
         if (ImGui::CollapsingHeader("light", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::DragFloat3("light pos", glm::value_ptr(m_lightPos), 0.01f);
             ImGui::SliderFloat("materialShininess", &m_materialShininess, 0.0f, 256.0f);
@@ -133,15 +130,20 @@ void Render() {
     }
     ImGui::End();
 
-    //glClearColor(0.1f, 0.2f, 0.3f, 0.0f);
-    //glClear(GL_COLOR_BUFFER_BIT);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glUseProgram(renderingProgram);
 
     // transform
     auto angle = glm::radians((float)glfwGetTime() * 120.0f);
-    auto model = glm::rotate(glm::mat4(1.0f),
-      m_animation ? angle : glm::radians(20.0f),
-      glm::vec3(1.0f, 0.5f, 0.0f));
+    glm::mat4 model(1.0f);
+    if(m_animation) { 
+        model = glm::rotate(glm::mat4(1.0f),  angle, glm::vec3(1.0f, 0.5f, 0.0f));
+    } else {
+        model = glm::rotate(glm::mat4(1.0f), glm::radians(m_modelRotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
+                glm::rotate(glm::mat4(1.0f), glm::radians(m_modelRotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                glm::rotate(glm::mat4(1.0f), glm::radians(m_modelRotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+    }
 
     auto cameraPos = glm::vec3(0.0f, 0.0f, 3.0f);
     auto cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -159,6 +161,11 @@ void Render() {
 
     auto worldMatLoc = glGetUniformLocation(renderingProgram, "worldMat");  
     glUniformMatrix4fv(worldMatLoc, 1, GL_FALSE, glm::value_ptr(model));
+
+    auto transform = projection * view * model;
+    auto transformLoc = glGetUniformLocation(renderingProgram, "transform");
+    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(transform));
+
     // auto viewMatLoc = glGetUniformLocation(renderingProgram, "viewMat");  
     // glUniformMatrix4fv(viewMatLoc, 1, GL_FALSE, glm::value_ptr(view));
     // auto projectionMatLoc = glGetUniformLocation(renderingProgram, "projMat");
@@ -166,6 +173,14 @@ void Render() {
     auto eyePosLoc = glGetUniformLocation(renderingProgram, "eyePos");
     glUniform3fv(eyePosLoc, 1, glm::value_ptr(m_cameraPos));
 
+    // light parameter
+    glm::vec3 materialSpecular(1.0f, 1.0f, 1.0f);
+    glm::vec3 materialAmbient(1.0f, 1.0f, 1.0f);
+    glm::vec3 materialEmit(0.0f, 0.0f, 0.0f);
+
+    glm::vec3 lightDiffuse(1.0f, 1.0f, 1.0f);
+    glm::vec3 lightSpecular(1.0f, 1.0f, 1.0f);
+    glm::vec3 lightAmbient(0.1f, 0.1f, 0.1f);
 
     auto matSpecularLoc = glGetUniformLocation(renderingProgram, "matSpecular");
     glUniform3fv(matSpecularLoc, 1, glm::value_ptr(materialSpecular));
@@ -184,29 +199,36 @@ void Render() {
     glUniform3fv(srcAmbientLoc, 1, glm::value_ptr(lightAmbient));
 
     // Direction of the light
-    //glm::vec3 lightDirection(0.5f, 0.5f, 0.5f);
-    glm::vec3 lightDirection = - m_cameraFront;
-
-
-    auto transform = projection * view * model;
-    auto transformLoc = glGetUniformLocation(renderingProgram, "transform");
-    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(transform));
+    glm::vec3 lightDirection(0.2f, 1.5f, 0.3f);
+    //glm::vec3 lightDirection = - m_cameraFront;
     
-    // // light source 그리기
-    // auto lightPosLoc = glGetUniformLocation(renderingProgram, "lightPos");
-    // glUniform3fv(lightPosLoc, 1, glm::value_ptr(m_lightPos));
+    // light source 그리기
+    GLint lightDirLoc = glGetUniformLocation(renderingProgram, "lightDir");
+    glUniform3fv(lightDirLoc, 1, glm::value_ptr(lightDirection));
     
-    // auto lightModel = glm::translate(glm::mat4(1.0f), m_lightPos) * glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
+    // Light position 전달
+    GLint lightPosLoc = glGetUniformLocation(renderingProgram, "lightPos");
+    glUniform3fv(lightPosLoc, 1, glm::value_ptr(m_lightPos));
+    
+    // light source 그리기
+    // auto lightModel = glm::translate(glm::mat4(1.0f), m_lightPos) *
+    //                   glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
     // auto lightTransform = projection * view * lightModel;
-    // glUniformMatrix4fv(lightPosLoc, 1, GL_FALSE, glm::value_ptr(lightTransform));
+    // glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(lightTransform));
     // auto lightModelMatLoc = glGetUniformLocation(renderingProgram, "worldMat");
     // glUniformMatrix4fv(worldMatLoc, 1, GL_FALSE, glm::value_ptr(lightModel));
     // lightAmbient = glm::vec3(1.0f, 1.0f, 1.0f); 
     // glUniform3fv(srcAmbientLoc, 1, glm::value_ptr(lightAmbient));
 
-
     glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
 
+    // simple program으로 light source 그리기
+    glUseProgram(simpleProgram);
+    auto lightModel = glm::translate(glm::mat4(1.0f), m_lightPos) *
+                      glm::scale(glm::mat4(1.0f), glm::vec3(0.1f));
+    auto lightTransform = projection * view * lightModel;
+    glUniformMatrix4fv(glGetUniformLocation(simpleProgram, "transform"), 1, GL_FALSE, glm::value_ptr(lightTransform));
+    glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, 0);
 
     //glDrawArrays(GL_POINTS, 0, 1);
     //RenderTriangle();
@@ -240,31 +262,36 @@ void Startup() {
     glEnable(GL_DEPTH_TEST);  
 
     // 이미지 로드
-    auto image = Image::Load("./image/wall.jpg");
-    if (!image) {
-        SPDLOG_ERROR("failed to load image");
+    m_image1 = Image::Load("./image/container2.png");
+    if (!m_image1) {
+        SPDLOG_ERROR("failed to load image1");
         return; // Correct usage of return in a void function
     }
-    SPDLOG_INFO("wall image: {}x{}, {} channels", image->GetWidth(), image->GetHeight(), image->GetChannelCount());
 
-    auto image2 = Image::Load("./image/awesomeface.png");
-    if (!image2) {
-        SPDLOG_ERROR("failed to load awesomeface image");
+    SPDLOG_INFO("image1: {}x{}, {} channels",
+    m_image1->GetWidth(), m_image1->GetHeight(), m_image1->GetChannelCount());
+
+    m_image2 = Image::Load("./image/container2_specular.png");
+    if (!m_image2) {
+        SPDLOG_ERROR("failed to load image2");
         return; // Correct usage of return in a void function
     }
-    SPDLOG_INFO("awesomeface image: {}x{}, {} channels", image->GetWidth(), image->GetHeight(), image->GetChannelCount());
+
+    SPDLOG_INFO("image2: {}x{}, {} channels",
+    m_image2->GetWidth(), m_image2->GetHeight(), m_image2->GetChannelCount());
 
     // 텍스처 생성
-    glGenTextures(1, &m_texture); // texture id 생성
-    glBindTexture(GL_TEXTURE_2D, m_texture); // texture id 바인딩
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // linear filter
+    glGenTextures(1, &m_texture);
+    glBindTexture(GL_TEXTURE_2D, m_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB,
-        image->GetWidth(), image->GetHeight(), 0,
-        GL_RGB, GL_UNSIGNED_BYTE, image->GetData());
-
+        m_image1->GetWidth(), m_image1->GetHeight(), 0,
+        GL_RGBA, GL_UNSIGNED_BYTE, m_image1->GetData());
+     glGenerateMipmap(GL_TEXTURE_2D); // 각 텍스처에 대해 mipmap 생성
+   
     // texture 2
     glGenTextures(1, &m_texture2);
     glBindTexture(GL_TEXTURE_2D, m_texture2);
@@ -273,8 +300,11 @@ void Startup() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB,
-        image2->GetWidth(), image2->GetHeight(), 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, image2->GetData()); // RGBA for PNG
+        m_image2->GetWidth(), m_image2->GetHeight(), 0,
+        GL_RGBA, GL_UNSIGNED_BYTE, m_image2->GetData()); // RGBA for PNG
+       
+    // mipmaps
+    glGenerateMipmap(GL_TEXTURE_2D);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_texture);
@@ -282,6 +312,12 @@ void Startup() {
     glBindTexture(GL_TEXTURE_2D, m_texture2);
     glUniform1i(glGetUniformLocation(renderingProgram, "diffuse_tex"), 0);
     glUniform1i(glGetUniformLocation(renderingProgram, "specular_tex"), 1);
+
+    simpleProgram = CompileShaders("./shader/simple.vs", "./shader/simple.fs"); 
+    if (simpleProgram == 0) {
+        SPDLOG_ERROR("failed to compile simple shaders");
+        return;
+    }
     
     // 정점 데이터
     float vertices[] = { // pos.xyz, normal.xyz, texcoord.uv
