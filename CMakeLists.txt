@@ -14,6 +14,8 @@ add_executable(${PROJECT_NAME}
     src/shader_m.h
     # src/image.cpp src/image.h
     src/camera.h
+    src/mesh.h
+    src/model.h
 )
 
 include(Dependency.cmake)
