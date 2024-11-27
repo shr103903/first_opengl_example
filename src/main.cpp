@@ -119,9 +119,18 @@ void Render() {
 
      // be sure to activate shader when setting uniforms/drawing objects
     lightingShader.use();
-    lightingShader.setVec3("light.position", lightPos);
+
+    // point light
+    // lightingShader.setVec3("light.position", lightPos);
+    // directional light
     // lightingShader.setVec3("light.direction", -0.2f, -1.0f, -0.3f);
     //lightingShader.setVec3("light.direction", m_lightDirection);
+    // spot light
+    lightingShader.setVec3("light.position",  camera.Position);
+    lightingShader.setVec3("light.direction", camera.Front);
+    lightingShader.setFloat("light.cutOff",   glm::cos(glm::radians(12.5f)));
+    lightingShader.setFloat("light.outerCutOff",   glm::cos(glm::radians(17.5f)));
+
     lightingShader.setVec3("viewPos", camera.Position);
 
     // light properties
@@ -213,7 +222,7 @@ void Init() {
     // -----------------------------
     glEnable(GL_DEPTH_TEST);  
 
-    lightingShader = Shader("./shader/lighting_point.vs", "./shader/lighting_point.fs");
+    lightingShader = Shader("./shader/lighting_spot.vs", "./shader/lighting_spot.fs");
     lightCubeShader= Shader("./shader/lighting_cube.vs", "./shader/lighting_cube.fs");
     
     // 정점 데이터
