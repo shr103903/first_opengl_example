@@ -52,6 +52,7 @@ Shader lightingShader; // 물체를 그리는 쉐이더프로그램
 Shader lightCubeShader; // 광원을 그리는 쉐이더프로그램
 Shader simpleDepthShader;
 Shader debugDepthQuad;
+Shader shader;
 //std::unique_ptr<Shader> lightingShader;
 Model ourModel;
 
@@ -167,6 +168,23 @@ void Render() {
     glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    // 2. render scene as normal using the generated depth/shadow map  
+    // --------------------------------------------------------------
+    shader.use();
+    glm::mat4 projectionS = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+    glm::mat4 viewS = camera.GetViewMatrix();
+    shader.setMat4("projection", projectionS);
+    shader.setMat4("view", viewS);
+    // set light uniforms
+    shader.setVec3("viewPos", camera.Position);
+    shader.setVec3("lightPos", lightPos);
+    shader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, woodTexture);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    renderScene(shader);
+
     // render Depth map to quad for visual debugging
     // ---------------------------------------------
     debugDepthQuad.use();
@@ -174,7 +192,7 @@ void Render() {
     debugDepthQuad.setFloat("far_plane", far_plane);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, depthMap);
-    renderQuad();
+    // renderQuad();// depth map 디버깅용이므로 여기서는 안그림
 
     // positions of the point lights
     glm::vec3 pointLightPositions[] = {
@@ -190,8 +208,8 @@ void Render() {
     // directional light
     lightingShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
     lightingShader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
-    lightingShader.setVec3("dirLight.diffuse", 0.8f, 0.8f, 0.8f);
-    lightingShader.setVec3("dirLight.specular", 0.5f, 0.5f, 0.5f);
+    lightingShader.setVec3("dirLight.diffuse", 0.9f, 0.9f, 0.9f);
+    lightingShader.setVec3("dirLight.specular", 0.7f, 0.7f, 0.7f);
     // point light 1
     lightingShader.setVec3("pointLights[0].position", pointLightPositions[0]);
     lightingShader.setVec3("pointLights[0].ambient", 0.05f, 0.05f, 0.05f);
@@ -248,23 +266,7 @@ void Render() {
     // lightingShader.setFloat("light.linear",    0.09f);
     // lightingShader.setFloat("light.quadratic", 0.032f);	
 
-    // material properties
-    lightingShader.setFloat("material.shininess", m_materialShininess);
-
-    // view/projection transformations
-    glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-    glm::mat4 view = camera.GetViewMatrix();
-    lightingShader.setMat4("projection", projection);
-    lightingShader.setMat4("view", view);
-
-    // world transformation
-    glm::mat4 model = glm::mat4(1.0f);
-    model = glm::rotate(model, glm::radians(m_modelRotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
-    model = glm::rotate(model, glm::radians(m_modelRotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::rotate(model, glm::radians(m_modelRotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
-    lightingShader.setMat4("model", model);
-
-    ourModel.Draw(lightingShader);
+    renderOurModel();
 
     // // bind diffuse map
     // glActiveTexture(GL_TEXTURE0);
@@ -333,6 +335,7 @@ void Init() {
 
     // build and compile shaders
     // -------------------------
+    shader = Shader("./shader/shadow_mapping.vs", "./shader/shadow_mapping.fs");
     simpleDepthShader = Shader("./shader/simpleDepthShader.vs", "./shader/simpleDepthShader.fs");
     debugDepthQuad = Shader("./shader/debug_quad.vs", "./shader/debug_quad_depth.fs");
 
@@ -392,6 +395,11 @@ void Init() {
 
     // shader configuration
     // --------------------
+    //shadow rendering 위해 추가 
+    shader.use();
+    shader.setInt("diffuseTexture", 0);
+    shader.setInt("shadowMap", 1);
+    
     debugDepthQuad.use();
     debugDepthQuad.setInt("depthMap", 0);
 
@@ -433,15 +441,15 @@ void Shutdown() {
 
 void renderOurModel() {
     
-    // be sure to activate shader when setting uniforms/drawing objects
-    lightingShader.use();
-    lightingShader.setVec3("light.position", lightPos);
-    lightingShader.setVec3("viewPos", camera.Position);
+    // // be sure to activate shader when setting uniforms/drawing objects
+    // lightingShader.use();
+    // lightingShader.setVec3("light.position", lightPos);
+    // lightingShader.setVec3("viewPos", camera.Position);
 
-    // light properties
-    lightingShader.setVec3("light.ambient", 0.2f, 0.2f, 0.2f);
-    lightingShader.setVec3("light.diffuse", 0.5f, 0.5f, 0.5f);
-    lightingShader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
+    // // light properties
+    // lightingShader.setVec3("light.ambient", 0.2f, 0.2f, 0.2f);
+    // lightingShader.setVec3("light.diffuse", 0.5f, 0.5f, 0.5f);
+    // lightingShader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
 
     // material properties
     lightingShader.setFloat("material.shininess", m_materialShininess);
@@ -454,6 +462,7 @@ void renderOurModel() {
 
     // world transformation
     glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(0.0f, 1.4f, 0.0));
     model = glm::rotate(model, glm::radians(m_modelRotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
     model = glm::rotate(model, glm::radians(m_modelRotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::rotate(model, glm::radians(m_modelRotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
@@ -472,23 +481,23 @@ void renderScene(const Shader &shader)
     shader.setMat4("model", model);
     glBindVertexArray(planeVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
-    // cubes
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(0.0f, 1.5f, 0.0));
-    model = glm::scale(model, glm::vec3(0.5f));
-    shader.setMat4("model", model);
-    renderCube();
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(2.0f, 0.0f, 1.0));
-    model = glm::scale(model, glm::vec3(0.5f));
-    shader.setMat4("model", model);
-    renderCube();
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(-1.0f, 0.0f, 2.0));
-    model = glm::rotate(model, glm::radians(60.0f), glm::normalize(glm::vec3(1.0, 0.0, 1.0)));
-    model = glm::scale(model, glm::vec3(0.25));
-    shader.setMat4("model", model);
-    renderCube();
+    // // cubes
+    // model = glm::mat4(1.0f);
+    // model = glm::translate(model, glm::vec3(-1.0f, 1.5f, 0.0));
+    // model = glm::scale(model, glm::vec3(0.5f));
+    // shader.setMat4("model", model);
+    // renderCube();
+    // model = glm::mat4(1.0f);
+    // model = glm::translate(model, glm::vec3(2.0f, 0.5f, 1.0));
+    // model = glm::scale(model, glm::vec3(0.5f));
+    // shader.setMat4("model", model);
+    // renderCube();
+    // model = glm::mat4(1.0f);
+    // model = glm::translate(model, glm::vec3(-1.0f, 0.5f, 2.0));
+    // model = glm::rotate(model, glm::radians(60.0f), glm::normalize(glm::vec3(1.0, 0.0, 1.0)));
+    // model = glm::scale(model, glm::vec3(0.25));
+    // shader.setMat4("model", model);
+    // renderCube();
 }
 
 // renderCube() renders a 1x1 3D cube in NDC.
