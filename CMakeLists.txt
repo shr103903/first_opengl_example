@@ -15,7 +15,12 @@ add_executable(${PROJECT_NAME}
     # src/image.cpp src/image.h
     src/camera.h
     src/mesh.h
-    src/model.h
+    src/model_animation.h
+    src/animation.h
+    src/animator.h
+    src/animdata.h
+    src/bone.h
+    src/assimp_glm_helpers.h
 )
 
 include(Dependency.cmake)

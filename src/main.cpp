@@ -7,7 +7,9 @@
 #include "camera.h"
 // #define STB_IMAGE_IMPLEMENTATION
 // #include <stb/stb_image.h>
-#include "model.h"
+// #include "model.h"
+#include "animator.h"
+#include "model_animation.h"
 
 using namespace std;
 
@@ -16,9 +18,13 @@ void Render();
 void Init();
 void Shutdown();
 unsigned int loadTexture(const std::string& filepath);
-void ProcessInput(GLFWwindow* window);
 void MouseMove(double x, double y);
 void MouseButton(int button, int action, double x, double y);
+
+void ProcessInput(GLFWwindow* window);
+void framebuffer_size_callback(GLFWwindow* window, int width, int height);
+void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 
 void renderCube();
 void renderQuad();
@@ -33,7 +39,7 @@ const unsigned int SCR_WIDTH = WINDOW_WIDTH;
 const unsigned int SCR_HEIGHT = WINDOW_HEIGHT;
 
 ////  camera 
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+Camera camera(glm::vec3(0.0f, 2.5f, 10.0f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -52,9 +58,13 @@ Shader lightingShader; // 물체를 그리는 쉐이더프로그램
 Shader lightCubeShader; // 광원을 그리는 쉐이더프로그램
 Shader simpleDepthShader;
 Shader debugDepthQuad;
-Shader shader;
+Shader shader; // 그림자 셰이더
+Shader ourShader; // 애니메이션 모델 셰이더
 //std::unique_ptr<Shader> lightingShader;
 Model ourModel;
+
+Animation danceAnimation;
+Animator animator;
 
 unsigned int diffuseMap;
 unsigned int specularMap;
@@ -143,8 +153,8 @@ void Render() {
     // --------------------------------------------------------------
     glm::mat4 lightProjection, lightView;
     glm::mat4 lightSpaceMatrix;
-    float near_plane = 1.0f, far_plane = 7.5f;
-    lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
+    float near_plane = 1.0f, far_plane = 30.f;
+    lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, near_plane, far_plane);
     lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
     lightSpaceMatrix = lightProjection * lightView;
     // render scene from light's point of view
@@ -157,8 +167,9 @@ void Render() {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, woodTexture);
         renderScene(simpleDepthShader);
-        // 아래 코드는 배낭 모델을 렌더링하기 위한 것 
+        // 아래 코드는 배낭 모델을 렌더링하기 위한 것
         glm::mat4 modelB = glm::mat4(1.0f);
+        modelB = glm::scale(modelB, glm::vec3(0.7f, 0.7f, 0.7f));  // 크기 조정
         simpleDepthShader.setMat4("model", modelB);
         ourModel.Draw(simpleDepthShader);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -207,7 +218,7 @@ void Render() {
 
     // directional light
     lightingShader.setVec3("dirLight.direction", -0.2f, -1.0f, -0.3f);
-    lightingShader.setVec3("dirLight.ambient", 0.05f, 0.05f, 0.05f);
+    lightingShader.setVec3("dirLight.ambient", 0.2f, 0.2f, 0.2f);
     lightingShader.setVec3("dirLight.diffuse", 0.9f, 0.9f, 0.9f);
     lightingShader.setVec3("dirLight.specular", 0.7f, 0.7f, 0.7f);
     // point light 1
@@ -216,41 +227,41 @@ void Render() {
     lightingShader.setVec3("pointLights[0].diffuse", 0.8f, 0.8f, 0.8f);
     lightingShader.setVec3("pointLights[0].specular", 1.0f, 1.0f, 1.0f);
     lightingShader.setFloat("pointLights[0].constant", 1.0f);
-    lightingShader.setFloat("pointLights[0].linear", 0.09f);
-    lightingShader.setFloat("pointLights[0].quadratic", 0.032f);
+    lightingShader.setFloat("pointLights[0].linear", 0.022f);
+    lightingShader.setFloat("pointLights[0].quadratic", 0.0019f);
     // point light 2
     lightingShader.setVec3("pointLights[1].position", pointLightPositions[1]);
     lightingShader.setVec3("pointLights[1].ambient", 0.05f, 0.05f, 0.05f);
     lightingShader.setVec3("pointLights[1].diffuse", 0.8f, 0.8f, 0.8f);
     lightingShader.setVec3("pointLights[1].specular", 1.0f, 1.0f, 1.0f);
     lightingShader.setFloat("pointLights[1].constant", 1.0f);
-    lightingShader.setFloat("pointLights[1].linear", 0.09f);
-    lightingShader.setFloat("pointLights[1].quadratic", 0.032f);
+    lightingShader.setFloat("pointLights[1].linear", 0.022f);
+    lightingShader.setFloat("pointLights[1].quadratic", 0.0019f);
     // point light 3
     lightingShader.setVec3("pointLights[2].position", pointLightPositions[2]);
     lightingShader.setVec3("pointLights[2].ambient", 0.05f, 0.05f, 0.05f);
     lightingShader.setVec3("pointLights[2].diffuse", 0.8f, 0.8f, 0.8f);
     lightingShader.setVec3("pointLights[2].specular", 1.0f, 1.0f, 1.0f);
     lightingShader.setFloat("pointLights[2].constant", 1.0f);
-    lightingShader.setFloat("pointLights[2].linear", 0.09f);
-    lightingShader.setFloat("pointLights[2].quadratic", 0.032f);
+    lightingShader.setFloat("pointLights[2].linear", 0.022f);
+    lightingShader.setFloat("pointLights[2].quadratic", 0.0019f);
     // point light 4
     lightingShader.setVec3("pointLights[3].position", pointLightPositions[3]);
     lightingShader.setVec3("pointLights[3].ambient", 0.05f, 0.05f, 0.05f);
     lightingShader.setVec3("pointLights[3].diffuse", 0.8f, 0.8f, 0.8f);
     lightingShader.setVec3("pointLights[3].specular", 1.0f, 1.0f, 1.0f);
     lightingShader.setFloat("pointLights[3].constant", 1.0f);
-    lightingShader.setFloat("pointLights[3].linear", 0.09f);
-    lightingShader.setFloat("pointLights[3].quadratic", 0.032f);
+    lightingShader.setFloat("pointLights[3].linear", 0.022f);
+    lightingShader.setFloat("pointLights[3].quadratic", 0.0019f);
     // spotLight
     lightingShader.setVec3("spotLight.position", camera.Position);
     lightingShader.setVec3("spotLight.direction", camera.Front);
     lightingShader.setVec3("spotLight.ambient", 0.0f, 0.0f, 0.0f);
-    lightingShader.setVec3("spotLight.diffuse", 0.8f, 0.8f, 0.8f);
-    lightingShader.setVec3("spotLight.specular", 1.0f, 1.0f, 1.0f);
+    lightingShader.setVec3("spotLight.diffuse", 0.3f, 0.3f, 0.3f);
+    lightingShader.setVec3("spotLight.specular", 0.3f, 0.3f, 0.3f);
     lightingShader.setFloat("spotLight.constant", 1.0f);
-    lightingShader.setFloat("spotLight.linear", 0.09f);
-    lightingShader.setFloat("spotLight.quadratic", 0.032f);
+    lightingShader.setFloat("spotLight.linear", 0.022f);
+    lightingShader.setFloat("spotLight.quadratic", 0.0019f);
     lightingShader.setFloat("spotLight.cutOff", glm::cos(glm::radians(12.5f)));
     lightingShader.setFloat("spotLight.outerCutOff", glm::cos(glm::radians(15.0f)));
 
@@ -266,7 +277,38 @@ void Render() {
     // lightingShader.setFloat("light.linear",    0.09f);
     // lightingShader.setFloat("light.quadratic", 0.032f);	
 
-    renderOurModel();
+    // renderOurModel();
+
+    // don't forget to enable shader before setting uniforms
+	ourShader.use();
+
+	// view/projection transformations
+	glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+	glm::mat4 view = camera.GetViewMatrix();
+	ourShader.setMat4("projection", projection);
+	ourShader.setMat4("view", view);
+
+    auto transforms = animator.GetFinalBoneMatrices();
+	for (int i = 0; i < transforms.size(); ++i)
+		ourShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
+
+	// render the loaded model
+	glm::mat4 model = glm::mat4(1.0f);
+	// model = glm::translate(model, glm::vec3(0.0f, -0.45f, 0.0));
+    // model = glm::scale(model, glm::vec3(0.1f, 0.1f, 0.1));
+
+    // translate it down so it's at the center of the scene
+    model = glm::translate(model, glm::vec3(0.0f, -0.7f, 0.0f)); 
+    // it's a bit too big for our scene, so scale it down
+    model = glm::scale(model, glm::vec3(0.7f, 0.7f, 0.7f));
+    // model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+    // model = glm::rotate(model, glm::radians(m_modelRotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+    // model = glm::rotate(model, glm::radians(m_modelRotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+    // model = glm::rotate(model, glm::radians(m_modelRotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+	ourShader.setMat4("model", model);
+	ourModel.Draw(ourShader);
+
 
     // // bind diffuse map
     // glActiveTexture(GL_TEXTURE0);
@@ -403,9 +445,14 @@ void Init() {
     debugDepthQuad.use();
     debugDepthQuad.setInt("depthMap", 0);
 
+    ourShader = Shader("./shader/anim_model.vs", "./shader/anim_model.fs");
+
     // load models
     // -----------
-    ourModel = Model("./model/backpack/backpack.obj");
+    // ourModel = Model("./model/backpack/backpack.obj");
+    ourModel = Model("./model/Timmy/model.dae");
+	danceAnimation = Animation("./model/Timmy/model.dae", &ourModel);
+	animator = Animator(&danceAnimation);
 
     // // second, configure the light's VAO (VBO stays the same; the vertices are the same for the light object which is also a 3D cube)
     // //unsigned int lightCubeVAO;
@@ -462,14 +509,14 @@ void renderOurModel() {
 
     // world transformation
     glm::mat4 model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(0.0f, 1.4f, 0.0));
+    model = glm::translate(model, glm::vec3(0.0f, -0.45f, 1.0));
+    model = glm::scale(model, glm::vec3(0.01f, 0.01f, 0.01));
     model = glm::rotate(model, glm::radians(m_modelRotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
     model = glm::rotate(model, glm::radians(m_modelRotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::rotate(model, glm::radians(m_modelRotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
     lightingShader.setMat4("model", model);
     
     ourModel.Draw(lightingShader);
-
 }
 
 // renders the 3D scene
@@ -481,6 +528,7 @@ void renderScene(const Shader &shader)
     shader.setMat4("model", model);
     glBindVertexArray(planeVAO);
     glDrawArrays(GL_TRIANGLES, 0, 6);
+
     // // cubes
     // model = glm::mat4(1.0f);
     // model = glm::translate(model, glm::vec3(-1.0f, 1.5f, 0.0));
@@ -661,6 +709,33 @@ void ProcessInput(GLFWwindow* window) {
         camera.ProcessKeyboard(RIGHT, deltaTime);
 }
 
+// glfw: whenever the mouse moves, this callback is called
+// -------------------------------------------------------
+void mouse_callback(GLFWwindow* window, double xpos, double ypos)
+{
+	if (firstMouse)
+	{
+		lastX = xpos;
+		lastY = ypos;
+		firstMouse = false;
+	}
+
+	float xoffset = xpos - lastX;
+	float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+
+	lastX = xpos;
+	lastY = ypos;
+
+	camera.ProcessMouseMovement(xoffset, yoffset);
+}
+
+// glfw: whenever the mouse scroll wheel scrolls, this callback is called
+// ----------------------------------------------------------------------
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	camera.ProcessMouseScroll(yoffset);
+}
+
 void MouseMove(double x, double y) {
     if (!m_cameraControl)
         return;
@@ -673,16 +748,16 @@ void MouseMove(double x, double y) {
 }
 
 void MouseButton(int button, int action, double x, double y) {
-  if (button == GLFW_MOUSE_BUTTON_RIGHT) {
-    if (action == GLFW_PRESS) {
-      // 마우스 조작 시작 시점에 현재 마우스 커서 위치 저장
-      m_prevMousePos = glm::vec2((float)x, (float)y);
-      m_cameraControl = true;
+    if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+        if (action == GLFW_PRESS) {
+        // 마우스 조작 시작 시점에 현재 마우스 커서 위치 저장
+        m_prevMousePos = glm::vec2((float)x, (float)y);
+        m_cameraControl = true;
+        }
+        else if (action == GLFW_RELEASE) {
+            m_cameraControl = false;
+        }
     }
-    else if (action == GLFW_RELEASE) {
-      m_cameraControl = false;
-    }
-  }
 }
 
 void OnCursorPos(GLFWwindow* window, double x, double y) {
@@ -750,6 +825,8 @@ int main(int argc, const char** argv) {
     glfwSetCursorPosCallback(window, OnCursorPos);
     glfwSetMouseButtonCallback(window, OnMouseButton);
     // glfwSetScrollCallback(window, OnScroll);
+	// glfwSetCursorPosCallback(window, mouse_callback);
+	// glfwSetScrollCallback(window, scroll_callback);
 
     // shader program 생성 및 사용
     Init();
@@ -764,6 +841,7 @@ int main(int argc, const char** argv) {
         lastFrame = currentFrame;
 
         ProcessInput(window);
+        animator.UpdateAnimation(deltaTime);
         glfwPollEvents();
 
         ImGui_ImplGlfw_NewFrame();
