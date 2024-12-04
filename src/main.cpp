@@ -32,7 +32,7 @@ void renderScene(const Shader &shader);
 void renderOurModel();
 
 // clear color
-glm::vec4 m_clearColor { glm::vec4(0.1f, 0.2f, 0.3f, 0.0f) };
+glm::vec4 m_clearColor { glm::vec4(0.3f, 0.35f, 0.4f, 0.0f) };
 
 //// settings - by using learnopengl.com
 const unsigned int SCR_WIDTH = WINDOW_WIDTH;
@@ -60,6 +60,7 @@ Shader simpleDepthShader;
 Shader debugDepthQuad;
 Shader shader; // 그림자 셰이더
 Shader ourShader; // 애니메이션 모델 셰이더
+Shader normalShader; // 노말 매핑 셰이더
 //std::unique_ptr<Shader> lightingShader;
 Model ourModel;
 
@@ -69,6 +70,11 @@ Animator animator;
 unsigned int diffuseMap;
 unsigned int specularMap;
 unsigned int emissionMap;
+
+// normal map
+unsigned int diffuseMapBlock;
+unsigned int normalMapBlock;
+
 
 unsigned int VBO;
 // unsigned int VBO, cubeVAO;
@@ -142,7 +148,7 @@ void Render() {
         if (ImGui::Button("reset camera")) {
             camera.Yaw = -90.0f;
             camera.Pitch = 0.0f;
-            camera.Position = glm::vec3(0.0f, 0.0f, 3.0f);
+            camera.Position = glm::vec3(0.0f, 2.5f, 10.0f);
             camera.updateCameraVectors();
         }
     }
@@ -205,6 +211,27 @@ void Render() {
     glBindTexture(GL_TEXTURE_2D, depthMap);
     // renderQuad();// depth map 디버깅용이므로 여기서는 안그림
 
+    // normal mapping 
+    normalShader.use();
+    glm::mat4 projectionN = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+    glm::mat4 viewN = camera.GetViewMatrix();
+    normalShader.setMat4("projection", projectionN);
+    normalShader.setMat4("view", viewN);
+    glm::mat4 modelN = glm::mat4(1.0f);
+    // modelN = glm::rotate(modelN, glm::radians((float)glfwGetTime() * -10.0f), glm::normalize(glm::vec3(1.0, 0.0, 1.0))); // rotate the quad to show normal mapping from multiple directions
+    normalShader.setMat4("model", modelN);
+    normalShader.setVec3("viewPos", camera.Position);
+    normalShader.setVec3("lightPos", lightPos);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, diffuseMapBlock);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, normalMapBlock);
+    modelN = glm::translate(modelN, glm::vec3(4.0f, 2.0f, 0.2f));
+    modelN = glm::scale(modelN, glm::vec3(2.5f));
+    normalShader.setMat4("model", modelN);
+    renderQuad();
+
+
     // positions of the point lights
     glm::vec3 pointLightPositions[] = {
         glm::vec3( 0.7f,  0.2f,  2.0f),
@@ -223,7 +250,7 @@ void Render() {
     lightingShader.setVec3("dirLight.specular", 0.7f, 0.7f, 0.7f);
     // point light 1
     lightingShader.setVec3("pointLights[0].position", pointLightPositions[0]);
-    lightingShader.setVec3("pointLights[0].ambient", 0.05f, 0.05f, 0.05f);
+    lightingShader.setVec3("pointLights[0].ambient", 0.5f, 0.5f, 0.5f);
     lightingShader.setVec3("pointLights[0].diffuse", 0.8f, 0.8f, 0.8f);
     lightingShader.setVec3("pointLights[0].specular", 1.0f, 1.0f, 1.0f);
     lightingShader.setFloat("pointLights[0].constant", 1.0f);
@@ -231,7 +258,7 @@ void Render() {
     lightingShader.setFloat("pointLights[0].quadratic", 0.0019f);
     // point light 2
     lightingShader.setVec3("pointLights[1].position", pointLightPositions[1]);
-    lightingShader.setVec3("pointLights[1].ambient", 0.05f, 0.05f, 0.05f);
+    lightingShader.setVec3("pointLights[1].ambient", 0.5f, 0.5f, 0.5f);
     lightingShader.setVec3("pointLights[1].diffuse", 0.8f, 0.8f, 0.8f);
     lightingShader.setVec3("pointLights[1].specular", 1.0f, 1.0f, 1.0f);
     lightingShader.setFloat("pointLights[1].constant", 1.0f);
@@ -239,7 +266,7 @@ void Render() {
     lightingShader.setFloat("pointLights[1].quadratic", 0.0019f);
     // point light 3
     lightingShader.setVec3("pointLights[2].position", pointLightPositions[2]);
-    lightingShader.setVec3("pointLights[2].ambient", 0.05f, 0.05f, 0.05f);
+    lightingShader.setVec3("pointLights[2].ambient", 0.5f, 0.5f, 0.5f);
     lightingShader.setVec3("pointLights[2].diffuse", 0.8f, 0.8f, 0.8f);
     lightingShader.setVec3("pointLights[2].specular", 1.0f, 1.0f, 1.0f);
     lightingShader.setFloat("pointLights[2].constant", 1.0f);
@@ -247,7 +274,7 @@ void Render() {
     lightingShader.setFloat("pointLights[2].quadratic", 0.0019f);
     // point light 4
     lightingShader.setVec3("pointLights[3].position", pointLightPositions[3]);
-    lightingShader.setVec3("pointLights[3].ambient", 0.05f, 0.05f, 0.05f);
+    lightingShader.setVec3("pointLights[3].ambient", 0.5f, 0.5f, 0.5f);
     lightingShader.setVec3("pointLights[3].diffuse", 0.8f, 0.8f, 0.8f);
     lightingShader.setVec3("pointLights[3].specular", 1.0f, 1.0f, 1.0f);
     lightingShader.setFloat("pointLights[3].constant", 1.0f);
@@ -267,16 +294,17 @@ void Render() {
 
     lightingShader.setVec3("viewPos", camera.Position);
 
-    // // light properties
-    // lightingShader.setVec3("light.ambient", 0.2f, 0.2f, 0.2f);
-    // lightingShader.setVec3("light.diffuse", 0.5f, 0.5f, 0.5f);
-    // lightingShader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
+    // material properties
+    lightingShader.setFloat("material.shininess", m_materialShininess);
 
-    // // point light
-    // lightingShader.setFloat("light.constant",  1.0f);
-    // lightingShader.setFloat("light.linear",    0.09f);
-    // lightingShader.setFloat("light.quadratic", 0.032f);	
+    // view/projection transformations
+    glm::mat4 projectionL = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+    glm::mat4 viewL = camera.GetViewMatrix();
+    lightingShader.setMat4("projection", projectionL);
+    lightingShader.setMat4("view", viewL);
 
+    renderScene(lightingShader);
+    lightingShader.setMat4("model", modelN);
     // renderOurModel();
 
     // don't forget to enable shader before setting uniforms
@@ -294,18 +322,8 @@ void Render() {
 
 	// render the loaded model
 	glm::mat4 model = glm::mat4(1.0f);
-	// model = glm::translate(model, glm::vec3(0.0f, -0.45f, 0.0));
-    // model = glm::scale(model, glm::vec3(0.1f, 0.1f, 0.1));
-
-    // translate it down so it's at the center of the scene
     model = glm::translate(model, glm::vec3(0.0f, -0.7f, 0.0f)); 
-    // it's a bit too big for our scene, so scale it down
     model = glm::scale(model, glm::vec3(0.7f, 0.7f, 0.7f));
-    // model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-
-    // model = glm::rotate(model, glm::radians(m_modelRotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
-    // model = glm::rotate(model, glm::radians(m_modelRotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
-    // model = glm::rotate(model, glm::radians(m_modelRotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
 	ourShader.setMat4("model", model);
 	ourModel.Draw(ourShader);
 
@@ -371,6 +389,7 @@ void Init() {
     // configure global opengl state
     // -----------------------------
     glEnable(GL_DEPTH_TEST);  
+    glClearColor(m_clearColor.r, m_clearColor.g, m_clearColor.b, m_clearColor.a);
 
     lightingShader = Shader("./shader/lighting.vs", "./shader/lighting.fs");
     lightCubeShader= Shader("./shader/lighting_cube.vs", "./shader/lighting_cube.fs");
@@ -381,7 +400,22 @@ void Init() {
     simpleDepthShader = Shader("./shader/simpleDepthShader.vs", "./shader/simpleDepthShader.fs");
     debugDepthQuad = Shader("./shader/debug_quad.vs", "./shader/debug_quad_depth.fs");
 
-     // set up vertex data (and buffer(s)) and configure vertex attributes
+    // normal mapping
+    normalShader = Shader("./shader/normal_mapping.vs", "./shader/normal_mapping.fs");
+
+    diffuseMapBlock =  loadTexture("./image/brickwall.jpg");
+    normalMapBlock  = loadTexture("./image/brickwall_normal.jpg");
+
+    // shader configuration
+    normalShader.use();
+    normalShader.setInt("diffuseMap", 0);
+    normalShader.setInt("normalMap", 1);
+
+    // load textures
+    // -------------
+    woodTexture = loadTexture("./image/wood.png");
+
+    // set up vertex data (and buffer(s)) and configure vertex attributes
     // ------------------------------------------------------------------
     float planeVertices[] = {
         // positions            // normals         // texcoords
@@ -407,10 +441,6 @@ void Init() {
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
     glBindVertexArray(0);
-
-    // load textures
-    // -------------
-    woodTexture = loadTexture("./image/wood.png");
 
     // configure depth map FBO
     // -----------------------
@@ -487,25 +517,6 @@ void Shutdown() {
 }
 
 void renderOurModel() {
-    
-    // // be sure to activate shader when setting uniforms/drawing objects
-    // lightingShader.use();
-    // lightingShader.setVec3("light.position", lightPos);
-    // lightingShader.setVec3("viewPos", camera.Position);
-
-    // // light properties
-    // lightingShader.setVec3("light.ambient", 0.2f, 0.2f, 0.2f);
-    // lightingShader.setVec3("light.diffuse", 0.5f, 0.5f, 0.5f);
-    // lightingShader.setVec3("light.specular", 1.0f, 1.0f, 1.0f);
-
-    // material properties
-    lightingShader.setFloat("material.shininess", m_materialShininess);
-
-    // view/projection transformations
-    glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-    glm::mat4 view = camera.GetViewMatrix();
-    lightingShader.setMat4("projection", projection);
-    lightingShader.setMat4("view", view);
 
     // world transformation
     glm::mat4 model = glm::mat4(1.0f);
@@ -631,28 +642,90 @@ void renderQuad()
 {
     if (quadVAO == 0)
     {
+        // positions
+        glm::vec3 pos1(-1.0f,  1.0f, 0.0f);
+        glm::vec3 pos2(-1.0f, -1.0f, 0.0f);
+        glm::vec3 pos3( 1.0f, -1.0f, 0.0f);
+        glm::vec3 pos4( 1.0f,  1.0f, 0.0f);
+        // texture coordinates
+        glm::vec2 uv1(0.0f, 1.0f);
+        glm::vec2 uv2(0.0f, 0.0f);
+        glm::vec2 uv3(1.0f, 0.0f);  
+        glm::vec2 uv4(1.0f, 1.0f);
+        // normal vector
+        glm::vec3 nm(0.0f, 0.0f, 1.0f);
+
+        // calculate tangent/bitangent vectors of both triangles
+        glm::vec3 tangent1, bitangent1;
+        glm::vec3 tangent2, bitangent2;
+        // triangle 1
+        // ----------
+        glm::vec3 edge1 = pos2 - pos1;
+        glm::vec3 edge2 = pos3 - pos1;
+        glm::vec2 deltaUV1 = uv2 - uv1;
+        glm::vec2 deltaUV2 = uv3 - uv1;
+
+        float f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+
+        tangent1.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+        tangent1.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+        tangent1.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+
+        bitangent1.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
+        bitangent1.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
+        bitangent1.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
+
+        // triangle 2
+        // ----------
+        edge1 = pos3 - pos1;
+        edge2 = pos4 - pos1;
+        deltaUV1 = uv3 - uv1;
+        deltaUV2 = uv4 - uv1;
+
+        f = 1.0f / (deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y);
+
+        tangent2.x = f * (deltaUV2.y * edge1.x - deltaUV1.y * edge2.x);
+        tangent2.y = f * (deltaUV2.y * edge1.y - deltaUV1.y * edge2.y);
+        tangent2.z = f * (deltaUV2.y * edge1.z - deltaUV1.y * edge2.z);
+
+
+        bitangent2.x = f * (-deltaUV2.x * edge1.x + deltaUV1.x * edge2.x);
+        bitangent2.y = f * (-deltaUV2.x * edge1.y + deltaUV1.x * edge2.y);
+        bitangent2.z = f * (-deltaUV2.x * edge1.z + deltaUV1.x * edge2.z);
+
+
         float quadVertices[] = {
-            // positions        // texture Coords
-            -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
-            -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
-             1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
-             1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+            // positions            // normal         // texcoords  // tangent                          // bitangent
+            pos1.x, pos1.y, pos1.z, nm.x, nm.y, nm.z, uv1.x, uv1.y, tangent1.x, tangent1.y, tangent1.z, bitangent1.x, bitangent1.y, bitangent1.z,
+            pos2.x, pos2.y, pos2.z, nm.x, nm.y, nm.z, uv2.x, uv2.y, tangent1.x, tangent1.y, tangent1.z, bitangent1.x, bitangent1.y, bitangent1.z,
+            pos3.x, pos3.y, pos3.z, nm.x, nm.y, nm.z, uv3.x, uv3.y, tangent1.x, tangent1.y, tangent1.z, bitangent1.x, bitangent1.y, bitangent1.z,
+
+            pos1.x, pos1.y, pos1.z, nm.x, nm.y, nm.z, uv1.x, uv1.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z,
+            pos3.x, pos3.y, pos3.z, nm.x, nm.y, nm.z, uv3.x, uv3.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z,
+            pos4.x, pos4.y, pos4.z, nm.x, nm.y, nm.z, uv4.x, uv4.y, tangent2.x, tangent2.y, tangent2.z, bitangent2.x, bitangent2.y, bitangent2.z
         };
-        // setup plane VAO
+        // configure plane VAO
         glGenVertexArrays(1, &quadVAO);
         glGenBuffers(1, &quadVBO);
         glBindVertexArray(quadVAO);
         glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
         glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)0);
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(3 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(6 * sizeof(float)));
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(8 * sizeof(float)));
+        glEnableVertexAttribArray(4);
+        glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(11 * sizeof(float)));
     }
     glBindVertexArray(quadVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 }
+
 
 // utility function for loading a 2D texture from file
 // ---------------------------------------------------
