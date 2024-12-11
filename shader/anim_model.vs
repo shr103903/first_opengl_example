@@ -14,6 +14,7 @@ uniform mat4 model;
 
 const int MAX_BONES = 100;
 const int MAX_BONE_INFLUENCE = 4;
+// 이 행렬들을 사용해 애니메이션된 뼈대 변환을 처리
 uniform mat4 finalBonesMatrices[MAX_BONES];
 
 out vec2 TexCoords;

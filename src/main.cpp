@@ -10,6 +10,7 @@
 // #include "model.h"
 #include "animator.h"
 #include "model_animation.h"
+#include <glm/gtx/string_cast.hpp>
 
 using namespace std;
 
@@ -160,12 +161,20 @@ void Render() {
     glm::mat4 lightProjection, lightView;
     glm::mat4 lightSpaceMatrix;
     float near_plane = 1.0f, far_plane = 30.f;
-    lightProjection = glm::ortho(-20.0f, 20.0f, -20.0f, 20.0f, near_plane, far_plane);
+    lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
     lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
     lightSpaceMatrix = lightProjection * lightView;
     // render scene from light's point of view
     simpleDepthShader.use();
     simpleDepthShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+
+    std::vector<glm::mat4> boneMatrices = animator.GetFinalBoneMatrices(); // 뼈대 행렬 계산
+    for (int i = 0; i < boneMatrices.size(); ++i) {
+        std::string uniformName = "finalBonesMatrices[" + std::to_string(i) + "]";
+        simpleDepthShader.setMat4(uniformName, boneMatrices[i]);
+        // simpleDepthShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", boneMatrices[i]); // 셰이더에 전달
+        // std::cout << "Bone " << i << ": " << glm::to_string(boneMatrices[i]) << std::endl;
+    }
 
     glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
     glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
@@ -173,7 +182,7 @@ void Render() {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, woodTexture);
         renderScene(simpleDepthShader);
-        // 아래 코드는 배낭 모델을 렌더링하기 위한 것
+        // 아래 코드는 모델을 렌더링하기 위한 것
         glm::mat4 modelB = glm::mat4(1.0f);
         modelB = glm::scale(modelB, glm::vec3(0.7f, 0.7f, 0.7f));  // 크기 조정
         simpleDepthShader.setMat4("model", modelB);
@@ -317,13 +326,17 @@ void Render() {
 	ourShader.setMat4("view", view);
 
     auto transforms = animator.GetFinalBoneMatrices();
-	for (int i = 0; i < transforms.size(); ++i)
+	for (int i = 0; i < transforms.size(); ++i){
 		ourShader.setMat4("finalBonesMatrices[" + std::to_string(i) + "]", transforms[i]);
+        // SPDLOG_DEBUG("finalBonesMatrices[{}]", transforms[i]);
+    }
 
 	// render the loaded model
 	glm::mat4 model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(0.0f, -0.7f, 0.0f)); 
-    model = glm::scale(model, glm::vec3(0.7f, 0.7f, 0.7f));
+    model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); 
+    model = glm::scale(model, glm::vec3(0.025f, 0.025f, 0.025f));
+    // 뒤집힌 모델 Y축 기준으로 180도 회전
+    model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	ourShader.setMat4("model", model);
 	ourModel.Draw(ourShader);
 
@@ -480,8 +493,8 @@ void Init() {
     // load models
     // -----------
     // ourModel = Model("./model/backpack/backpack.obj");
-    ourModel = Model("./model/Timmy/model.dae");
-	danceAnimation = Animation("./model/Timmy/model.dae", &ourModel);
+    ourModel = Model("./model/Timmy/Timmy_Model.dae");
+	danceAnimation = Animation("./model/Timmy/Timmy_Model.dae", &ourModel);
 	animator = Animator(&danceAnimation);
 
     // // second, configure the light's VAO (VBO stays the same; the vertices are the same for the light object which is also a 3D cube)
